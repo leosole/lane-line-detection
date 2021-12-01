@@ -107,8 +107,8 @@ def process_image(image):
 	gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 	img_hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
 
-	lower_yellow = np.array([300, 30, 30], dtype = "uint8")
-	upper_yellow = np.array([360, 80, 80], dtype="uint8")
+	lower_yellow = np.array([20, 100, 100], dtype = "uint8")
+	upper_yellow = np.array([30, 255, 255], dtype="uint8")
 
 	mask_yellow = cv2.inRange(img_hsv, lower_yellow, upper_yellow)	  
 	mask_white = cv2.inRange(gray_image, 160, 255)
