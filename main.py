@@ -22,7 +22,7 @@ def lines_drawn(img, lines, color=[255, 0, 0], thickness=6):
 	global first_frame
 	slope_l, slope_r = [],[]
 	lane_l,lane_r = [],[]
-
+	shape = img.shape[0]
 	α =0.2 
 	
 	for line in lines:
@@ -35,7 +35,7 @@ def lines_drawn(img, lines, color=[255, 0, 0], thickness=6):
 				slope_l.append(slope)
 				lane_l.append(line)
 		#2
-		shape = min(y1,y2,img.shape[0])
+		shape = min(y1,y2,shape)
 	
 	# to prevent errors in challenge video from dividing by zero
 	if((len(lane_l) == 0) or (len(lane_r) == 0)):
@@ -49,13 +49,13 @@ def lines_drawn(img, lines, color=[255, 0, 0], thickness=6):
 	mean_r = np.mean(np.array(lane_r),axis=0)
 	
 	if ((slope_mean_r == 0) or (slope_mean_l == 0 ) or (math.isinf(slope_mean_l)) or (math.isinf(slope_mean_r))):
-		print('dividing by zero')
+		print('dividing by zero/infinity')
 		return 1
 	
 	x1_l = int((shape - mean_l[0][1] - (slope_mean_l * mean_l[0][0]))/slope_mean_l) 
-	x2_l = int((shape - mean_l[0][1] - (slope_mean_l * mean_l[0][0]))/slope_mean_l)   
+	x2_l = int((shape - mean_l[0][3] - (slope_mean_l * mean_l[0][2]))/slope_mean_l)   
 	x1_r = int((shape - mean_r[0][1] - (slope_mean_r * mean_r[0][0]))/slope_mean_r)
-	x2_r = int((shape - mean_r[0][1] - (slope_mean_r * mean_r[0][0]))/slope_mean_r)
+	x2_r = int((shape - mean_r[0][3] - (slope_mean_r * mean_r[0][2]))/slope_mean_r)
 	
 	#6
 	if x1_l > x1_r:
@@ -63,15 +63,16 @@ def lines_drawn(img, lines, color=[255, 0, 0], thickness=6):
 		x1_r = x1_l
 		y1_l = int((slope_mean_l * x1_l ) + mean_l[0][1] - (slope_mean_l * mean_l[0][0]))
 		y1_r = int((slope_mean_r * x1_r ) + mean_r[0][1] - (slope_mean_r * mean_r[0][0]))
-		y2_l = int((slope_mean_l * x2_l ) + mean_l[0][1] - (slope_mean_l * mean_l[0][0]))
-		y2_r = int((slope_mean_r * x2_r ) + mean_r[0][1] - (slope_mean_r * mean_r[0][0]))
+		y2_l = int((slope_mean_l * x2_l ) + mean_l[0][3] - (slope_mean_l * mean_l[0][2]))
+		y2_r = int((slope_mean_r * x2_r ) + mean_r[0][3] - (slope_mean_r * mean_r[0][2]))
 	else:
 		y1_l = shape
 		y2_l = shape
 		y1_r = shape
 		y2_r = shape
 	  
-	present_frame = np.array([x1_l,y1_l,x2_l,y2_l,x1_r,y1_r,x2_r,y2_r],dtype ="float32")
+	# present_frame = np.array([x1_l,y1_l,x2_l,y2_l,x1_r,y1_r,x2_r,y2_r],dtype ="float32")
+	present_frame = np.array([mean_l[0][0], mean_l[0][1], mean_l[0][2], mean_l[0][3],mean_r[0][0], mean_r[0][1], mean_r[0][2], mean_r[0][3]],dtype ="float32")
 	
 	if first_frame == 1:
 		next_frame = present_frame        
@@ -91,6 +92,15 @@ def hough_lines(img, rho, theta, threshold, min_line_len, max_line_gap):
 	line_img = np.zeros((img.shape[0], img.shape[1], 3), dtype=np.uint8)
 	if lines.any():
 		print('lines detected')
+		for line in lines:
+			for x1,y1,x2,y2 in line:
+				cv2.line(img, (x1, y1), (x2, y2), [255, 0, 0], 3)
+				global show_img
+				if show_img:
+					cv2.imshow("test", img)
+					cv2.waitKey(0)
+					cv2.destroyAllWindows()
+					# show_img = False
 		lines_drawn(line_img,lines)
 		return line_img
 	return False
@@ -129,13 +139,12 @@ def process_image(image):
 	roi_image = interested_region(canny_edges, vertices)
 
 	theta = np.pi/180
-
+	# if show_img:
+	# 	cv2.imshow("test", roi_image)
+	# 	cv2.waitKey(0)
+	# 	cv2.destroyAllWindows()
 	line_image = hough_lines(roi_image, 4, theta, 30, 50, 180)
-	if show_img:
-		cv2.imshow("test", line_image)
-		cv2.waitKey(0)
-		cv2.destroyAllWindows()
-		show_img = False
+	
 	result = weighted_img(line_image, image, α=0.8, β=1., λ=0.)
 	return result
 
