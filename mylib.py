@@ -28,20 +28,23 @@ def auto_canny(image, sigma=0.33):
     return edged
 
 # Faz a média das linhas da esquerda e da direita (através do coeficiente angular).
-def average(image, lines, lane_height, prev_lines):
+def average(image, lines, lane_height, prev_lines, memory, right_mem, left_mem):
 	left = []
 	right = []
 	for line in lines:
 		x1, y1, x2, y2 = line.reshape(4)
+		if len(list(filter(lambda x: x > image.shape[1] or x < 0, [x1,x2]))) or len(list(filter(lambda y: y > image.shape[0] or y < 0, [y1,y2]))):
+			print("Linha fora da imagem")
+			break
 		parameters = np.polyfit((x1, x2), (y1, y2), 1)
 		slope = parameters[0]
 		y_intercept = parameters[1]
 
 		# Normalmente um slope positivo = left line  e slope negativo = right line mas neste caso, 
 		# o eixo Y da imagem é invertido, logo os slopes são invertidos (OpenCV tem eixo Y invertido).
-		if slope < 0:
+		if slope < -0.3:
 			left.append((slope, y_intercept))
-		else:
+		elif slope > 0.3:
 			right.append((slope, y_intercept))
 
 	# Pega a média das linhas
@@ -49,15 +52,22 @@ def average(image, lines, lane_height, prev_lines):
 	left_avg = np.average(left, axis=0)
 
 	# Se não houver linhas, usar linhas anteriores
+	# MEMORIA
 	if prev_lines is not None:
-		if np.isnan(right_avg).any() and (prev_lines[1] != [0,0,0,0]).all():
+		if np.isnan(right_avg).any() and (prev_lines[1] != [0,0,0,0]).all() and right_mem < memory:
+			right_mem += 1
 			prev_right = prev_lines[1]
 			prev_right_parameters = np.polyfit((prev_right[0], prev_right[2]), (prev_right[1], prev_right[3]), 1)
 			right_avg = prev_right_parameters
-		if np.isnan(left_avg).any() and (prev_lines[0] != [0,0,0,0]).all():
+		else:
+			right_mem = 0
+		if np.isnan(left_avg).any() and (prev_lines[0] != [0,0,0,0]).all() and left_mem < memory:
+			left_mem += 1
 			prev_left = prev_lines[0]
 			prev_left_parameters = np.polyfit((prev_left[0], prev_left[2]), (prev_left[1], prev_left[3]), 1)
 			left_avg = prev_left_parameters
+		else:
+			left_mem = 0
 
 	# Calcula interseção das linhas
 	# x_i (b1-b2) / (m2-m1)
