@@ -14,10 +14,16 @@ config_object.read("config.ini")
 param = config_object["PARAMETERS"]
 inputdata = config_object["INPUT"]
 
+
 #Definições de constantes
 DEBUG = bool(int(param['DEBUG'])) 
 SOURCE = inputdata['VIDEO'] 
 LANE_HEIGHT = float(param['LANE_HEIGHT']) 
+SAVE_VIDEO = bool(int(param["SAVE_VIDEO"]))
+FRAME_MEMORY = int(param["FRAME_MEMORY"])
+FRAME_OVERLAP = int(param["FRAME_OVERLAP"])
+CONTRAST_FACTOR = float(param["CONTRAST_FACTOR"])
+THRESHOLD = int(param["THRESHOLD"])
 
 #Inicializações
 debugStart = 0
@@ -34,7 +40,14 @@ if (cap.isOpened()== False):
 # Inicializa o cronômetro para o cálculo de fps
 if(DEBUG):
 	debugStart = time.time()
+if(SAVE_VIDEO):
+	output_name = "output_mem" + str(FRAME_MEMORY) + "_overlap" + str(FRAME_OVERLAP) + "_contrast" + str(CONTRAST_FACTOR) + "_threshold" + str(THRESHOLD) + ".mp4"
+	fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+	out = cv2.VideoWriter(output_name,fourcc, 20.0, (640*2,360*2))
 
+right_mem = 0
+left_mem = 0
+prev_frames = list()
 # Fica lendo o vídeo
 while(cap.isOpened()):
 	# Conta os frames para realizar o cálculo de fps (estou aceitando que inicialize com uma unidade a mais)
@@ -55,6 +68,22 @@ while(cap.isOpened()):
 		frameGray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 		frameHSV = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
+		#  Aumenta o contraste da imagem
+		frameGray = (frameGray) * (CONTRAST_FACTOR) - THRESHOLD
+		frameGray = np.clip(frameGray, 0, 255)
+		frameGray = np.uint8(frameGray)
+
+		# Adiciona informação dos frames anteriores
+		if not prev_frames:
+			prev_frames.append(frameGray)
+		else:
+			temp = frameGray
+			for prev_frame in prev_frames:
+				frameGray = cv2.bitwise_or(prev_frame, frameGray)
+			prev_frames.append(temp)
+			if len(prev_frames) > FRAME_OVERLAP:
+				prev_frames.pop(0)
+
 		frameBlur= cv2.GaussianBlur(frameGray, (5, 5), 0)
 		
 		# Dependente de dataset: as linhas da estrada são sempre amarelas e brancas. O Amarelo é um 
@@ -64,10 +93,10 @@ while(cap.isOpened()):
 		lower_yellow = np.array([20, 100, 100], dtype = "uint8")
 		upper_yellow = np.array([30, 255, 255], dtype="uint8")
 		mask_yellow = cv2.inRange(frameHSV, lower_yellow, upper_yellow)
-		mask_white = cv2.inRange(frameGray, 200, 255)
+		mask_white = cv2.inRange(frameGray, 130, 255)
 		mask_yw = cv2.bitwise_or(mask_white, mask_yellow)
 		frameYWMask = cv2.bitwise_and(frameGray, mask_yw)
-
+		
 		# Tavez devesse tentar pegar a faixa amarela no Canny passando frameYWMask, por hora, não é usado.
 		frameCanny = mylib.auto_canny(frameBlur)
 
@@ -93,8 +122,8 @@ while(cap.isOpened()):
 		# Param 5: Placeholder array
 		# Param 6: Comprimento mínimo da linha
 		# Param 7: Máximo de falhas na linha
-		lines = cv2.HoughLinesP(frameROI, rho=2, theta=np.pi/180, threshold=80, 
-			lines=np.array([]), minLineLength=40, maxLineGap=50)
+		lines = cv2.HoughLinesP(frameROI, rho=2, theta=np.pi/180, threshold=50, 
+			lines=np.array([]), minLineLength=50, maxLineGap=100)
 
 		if lines is None:
 			print("ERRO: Nenhuma linha encontrada")
@@ -102,16 +131,16 @@ while(cap.isOpened()):
 		
 		# Faz a média das linhas da tranformada 
 		if 'left_and_right_lines' in locals():
-			left_and_right_lines = mylib.average(frameROI,lines,LANE_HEIGHT, left_and_right_lines)
+			left_and_right_lines = mylib.average(frameROI,lines,LANE_HEIGHT, left_and_right_lines, FRAME_MEMORY, right_mem, left_mem)
 		else:
-			left_and_right_lines = mylib.average(frameROI,lines,LANE_HEIGHT, None)
+			left_and_right_lines = mylib.average(frameROI,lines,LANE_HEIGHT, None, FRAME_MEMORY, right_mem, left_mem)
 
 		# Prepara para fazer display
 		black_lines = mylib.display_lines(frameView, left_and_right_lines)
 		frameLanes = cv2.addWeighted(frameView, 0.8, black_lines, 1, 1)
 	
 		# Faz o display em uma janela
-		if(DEBUG):
+		if(DEBUG or SAVE_VIDEO):
 			d3_frameGray = cv2.cvtColor(frameGray, cv2.COLOR_GRAY2BGR)
 			d3_frameBlur = cv2.cvtColor(frameBlur, cv2.COLOR_GRAY2BGR)			
 			d3_frameCanny = cv2.cvtColor(frameCanny, cv2.COLOR_GRAY2BGR)
@@ -120,11 +149,13 @@ while(cap.isOpened()):
 			d3_frameROI = cv2.cvtColor(frameROI, cv2.COLOR_GRAY2BGR)
 		
 			numpy_horizontal1 = np.hstack((frameLanes, d3_frameCanny))
-			numpy_horizontal2 = np.hstack((d3_frameYWMask, d3_frameROI))
+			numpy_horizontal2 = np.hstack((d3_frameBlur, d3_frameROI))
 
 			numpy_2x2 = np.vstack((numpy_horizontal1, numpy_horizontal2))
-			cv2.imshow('Frame',numpy_2x2)
-
+			if(DEBUG):
+				cv2.imshow('Frame',numpy_2x2)
+			if(SAVE_VIDEO):
+				out.write(numpy_2x2)
 
 		# Pressiona tecla Q para sair
 		if cv2.waitKey(25) & 0xFF == ord('q'):
@@ -143,6 +174,10 @@ if(DEBUG):
 
 # Libera o video capture object
 cap.release()
+# SALVAR O VIDEO
+if(SAVE_VIDEO):
+	out.release()
+	print("Video salvo")
 
 # Fecha todas as janelas
 cv2.destroyAllWindows()
