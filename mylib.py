@@ -28,12 +28,12 @@ def auto_canny(image, sigma=0.33):
     return edged
 
 # Faz a média das linhas da esquerda e da direita (através do coeficiente angular).
-def average(image, lines, lane_height, prev_lines, memory, right_mem, left_mem):
+def average(image, lines, lane_height, prev_lines, memory, right_mem, left_mem, using_mem = False):
 	left = []
 	right = []
 	for line in lines:
 		x1, y1, x2, y2 = line.reshape(4)
-		if len(list(filter(lambda x: x > image.shape[1] or x < 0, [x1,x2]))) or len(list(filter(lambda y: y > image.shape[0] or y < 0, [y1,y2]))):
+		if len(list(filter(lambda x: x > image.shape[1] or x < 0, [x1,x2]))) or len(list(filter(lambda y: y > image.shape[0] or y < 0, [y1,y2]))) or ([x1, y1, x2, y2] == [0,0,0,0]) :
 			print("Linha fora da imagem")
 			break
 		parameters = np.polyfit((x1, x2), (y1, y2), 1)
@@ -59,14 +59,14 @@ def average(image, lines, lane_height, prev_lines, memory, right_mem, left_mem):
 			prev_right = prev_lines[1]
 			prev_right_parameters = np.polyfit((prev_right[0], prev_right[2]), (prev_right[1], prev_right[3]), 1)
 			right_avg = prev_right_parameters
-		else:
+		elif not using_mem:
 			right_mem = 0
 		if np.isnan(left_avg).any() and (prev_lines[0] != [0,0,0,0]).all() and left_mem < memory:
 			left_mem += 1
 			prev_left = prev_lines[0]
 			prev_left_parameters = np.polyfit((prev_left[0], prev_left[2]), (prev_left[1], prev_left[3]), 1)
 			left_avg = prev_left_parameters
-		else:
+		elif not using_mem:
 			left_mem = 0
 
 	# Calcula interseção das linhas
@@ -79,7 +79,7 @@ def average(image, lines, lane_height, prev_lines, memory, right_mem, left_mem):
 	left_line = make_points(image, left_avg, lane_height)
 	right_line = make_points(image, right_avg, lane_height)
 
-	return np.array([left_line, right_line])
+	return np.array([left_line, right_line]), right_mem, left_mem
 
 # Cria os pontos das linhas finais
 def make_points(image, average, lane_height=0.8): 

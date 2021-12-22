@@ -42,7 +42,7 @@ if(DEBUG):
 	debugStart = time.time()
 if(SAVE_VIDEO):
 	output_name = "output_mem" + str(FRAME_MEMORY) + "_overlap" + str(FRAME_OVERLAP) + "_contrast" + str(CONTRAST_FACTOR) + "_threshold" + str(THRESHOLD) + ".mp4"
-	fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+	fourcc = cv2.VideoWriter_fourcc(*'XVID')
 	out = cv2.VideoWriter(output_name,fourcc, 20.0, (640*2,360*2))
 
 right_mem = 0
@@ -69,7 +69,7 @@ while(cap.isOpened()):
 		frameHSV = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
 		#  Aumenta o contraste da imagem
-		frameGray = (frameGray) * (CONTRAST_FACTOR) - THRESHOLD
+		frameGray = (frameGray ** CONTRAST_FACTOR) / (THRESHOLD ** (CONTRAST_FACTOR - 1))
 		frameGray = np.clip(frameGray, 0, 255)
 		frameGray = np.uint8(frameGray)
 
@@ -126,19 +126,26 @@ while(cap.isOpened()):
 			lines=np.array([]), minLineLength=50, maxLineGap=100)
 
 		if lines is None:
-			print("ERRO: Nenhuma linha encontrada")
-			break
-		
-		# Faz a média das linhas da tranformada 
-		if 'left_and_right_lines' in locals():
-			left_and_right_lines = mylib.average(frameROI,lines,LANE_HEIGHT, left_and_right_lines, FRAME_MEMORY, right_mem, left_mem)
+			if 'left_and_right_lines' not in locals() or (right_mem > FRAME_MEMORY and left_mem > FRAME_MEMORY):
+				print("ERRO: Nenhuma linha encontrada")
+				frameLanes = frameView
+			else:
+				right_mem += 1
+				left_mem += 1
+				left_and_right_lines, right_mem, left_mem = mylib.average(frameROI,left_and_right_lines,LANE_HEIGHT, left_and_right_lines, FRAME_MEMORY, right_mem, left_mem, True)
+				black_lines = mylib.display_lines(frameView, left_and_right_lines)
+				frameLanes = cv2.addWeighted(frameView, 0.8, black_lines, 1, 1)
 		else:
-			left_and_right_lines = mylib.average(frameROI,lines,LANE_HEIGHT, None, FRAME_MEMORY, right_mem, left_mem)
+			# Faz a média das linhas da tranformada 
+			if 'left_and_right_lines' in locals():
+				left_and_right_lines, right_mem, left_mem = mylib.average(frameROI,lines,LANE_HEIGHT, left_and_right_lines, FRAME_MEMORY, right_mem, left_mem)
+			else:
+				left_and_right_lines, right_mem, left_mem = mylib.average(frameROI,lines,LANE_HEIGHT, None, FRAME_MEMORY, right_mem, left_mem)
 
-		# Prepara para fazer display
-		black_lines = mylib.display_lines(frameView, left_and_right_lines)
-		frameLanes = cv2.addWeighted(frameView, 0.8, black_lines, 1, 1)
-	
+			# Prepara para fazer display
+			black_lines = mylib.display_lines(frameView, left_and_right_lines)
+			frameLanes = cv2.addWeighted(frameView, 0.8, black_lines, 1, 1)
+		
 		# Faz o display em uma janela
 		if(DEBUG or SAVE_VIDEO):
 			d3_frameGray = cv2.cvtColor(frameGray, cv2.COLOR_GRAY2BGR)
