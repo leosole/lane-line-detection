@@ -41,10 +41,11 @@ if (cap.isOpened()== False):
 if(DEBUG):
 	debugStart = time.time()
 if(SAVE_VIDEO):
-	output_name = "output_mem" + str(FRAME_MEMORY) + "_overlap" + str(FRAME_OVERLAP) + "_contrast" + str(CONTRAST_FACTOR) + "_threshold" + str(THRESHOLD) + ".mp4"
+	output_name = "output_mem" + str(FRAME_MEMORY) + "_overlap" + str(FRAME_OVERLAP) + "_contrast" + str(CONTRAST_FACTOR) + ".mp4"
 	fourcc = cv2.VideoWriter_fourcc(*'XVID')
 	out = cv2.VideoWriter(output_name,fourcc, 20.0, (640*2,360*2))
 
+# TODO: segmentar estrada de terra vs asfalto
 right_mem = 0
 left_mem = 0
 prev_frames = list()
@@ -62,14 +63,32 @@ while(cap.isOpened()):
 		imageHeight = frame.shape[0]
 		imageWidth = frame.shape[1]
 
+		# Dependente de dataset: Aplica uma máscara trapezoidal no objeto de interesse.
+		imshape = frame.shape
+		# Opção original
+		# lower_left = [imshape[1]/9,imshape[0]]
+		# lower_right = [imshape[1]-imshape[1]/9,imshape[0]]
+		# top_left = [imshape[1]/2-imshape[1]/8,imshape[0]/2+imshape[0]/10]
+		# top_right = [imshape[1]/2+imshape[1]/8,imshape[0]/2+imshape[0]/10]
+		# Opção baseada no minha visão já com viés
+		lower_left =  [  imshape[1]/9 ,   imshape[0]    ]
+		lower_right = [7*imshape[1]/9 ,   imshape[0]    ]
+		top_left =    [4*imshape[1]/9 , 7*imshape[0]/10 ]
+		top_right =   [4*imshape[1]/9 , 7*imshape[0]/10 ]
+		vertices = [np.array([lower_left,top_left,top_right,lower_right],dtype=np.int32)]
+
 		# Pré-processamento
 		frameView = frame.copy()
 
 		frameGray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 		frameHSV = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
+		#  Threshold automático
+		mask = np.zeros_like(frameGray) 
+		mask = cv2.fillPoly(mask, vertices, 255)
+		threshold = cv2.mean(frameGray, mask)[0] * 2
 		#  Aumenta o contraste da imagem
-		frameGray = (frameGray ** CONTRAST_FACTOR) / (THRESHOLD ** (CONTRAST_FACTOR - 1))
+		frameGray = (frameGray ** CONTRAST_FACTOR) / (threshold ** (CONTRAST_FACTOR - 1))
 		frameGray = np.clip(frameGray, 0, 255)
 		frameGray = np.uint8(frameGray)
 
@@ -100,19 +119,7 @@ while(cap.isOpened()):
 		# Tavez devesse tentar pegar a faixa amarela no Canny passando frameYWMask, por hora, não é usado.
 		frameCanny = mylib.auto_canny(frameBlur)
 
-		# Dependente de dataset: Aplica uma máscara trapezoidal no objeto de interesse.
-		imshape = frameGray.shape
-		# Opção original
-		lower_left = [imshape[1]/9,imshape[0]]
-		lower_right = [imshape[1]-imshape[1]/9,imshape[0]]
-		top_left = [imshape[1]/2-imshape[1]/8,imshape[0]/2+imshape[0]/10]
-		top_right = [imshape[1]/2+imshape[1]/8,imshape[0]/2+imshape[0]/10]
-		# Opção baseada no minha visão já com viés
-		lower_left =  [  imshape[1]/9 ,   imshape[0]    ]
-		lower_right = [7*imshape[1]/9 ,   imshape[0]    ]
-		top_left =    [4*imshape[1]/9 , 7*imshape[0]/10 ]
-		top_right =   [4*imshape[1]/9 , 7*imshape[0]/10 ]
-		vertices = [np.array([lower_left,top_left,top_right,lower_right],dtype=np.int32)]
+		
 		frameROI = mylib.interested_region(frameCanny, vertices)
 
 		# Transformada Hough
@@ -122,8 +129,9 @@ while(cap.isOpened()):
 		# Param 5: Placeholder array
 		# Param 6: Comprimento mínimo da linha
 		# Param 7: Máximo de falhas na linha
-		lines = cv2.HoughLinesP(frameROI, rho=2, theta=np.pi/180, threshold=50, 
-			lines=np.array([]), minLineLength=50, maxLineGap=100)
+		# TODO: estudar transformada Hough
+		lines = cv2.HoughLinesP(frameROI, rho=1, theta=np.pi/180, threshold=30, 
+			lines=np.array([]), minLineLength=40, maxLineGap=120)
 
 		if lines is None:
 			if 'left_and_right_lines' not in locals() or (right_mem > FRAME_MEMORY and left_mem > FRAME_MEMORY):
