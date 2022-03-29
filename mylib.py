@@ -2,7 +2,10 @@
 import cv2
 import numpy as np
 from collections.abc import Iterable
-
+from skimage import io
+from sklearn.cluster import MeanShift
+from collections import Counter
+from PIL import Image
 
 #Aplica uma máscara é obtem a ROI
 def interested_region(img, vertices):
@@ -27,8 +30,12 @@ def auto_canny(image, sigma=0.33):
 
     return edged
 
+def most_frequent(List):
+    counted = Counter(List)
+    return counted.most_common(1)[0][0]
+
 # Faz a média das linhas da esquerda e da direita (através do coeficiente angular).
-def average(image, lines, lane_height, prev_lines, memory, right_mem, left_mem, using_mem = False):
+def average(image, lines, lane_height, prev_lines, memory, right_mem, left_mem, using_mem=False, min_slope=0.3, pavement=True, max_slope=1):
 	left = []
 	right = []
 	for line in lines:
@@ -39,17 +46,39 @@ def average(image, lines, lane_height, prev_lines, memory, right_mem, left_mem, 
 		parameters = np.polyfit((x1, x2), (y1, y2), 1)
 		slope = parameters[0]
 		y_intercept = parameters[1]
-
 		# Normalmente um slope positivo = left line  e slope negativo = right line mas neste caso, 
 		# o eixo Y da imagem é invertido, logo os slopes são invertidos (OpenCV tem eixo Y invertido).
-		if slope < -0.3:
+		if slope < -min_slope and slope > -max_slope:
 			left.append((slope, y_intercept))
-		elif slope > 0.3:
+		elif slope > min_slope and slope < max_slope:
 			right.append((slope, y_intercept))
-
+	if len(left):
+		ms_left = MeanShift().fit(left)
+	if len(right):
+		ms_right = MeanShift().fit(right)
+	# af_left = AffinityPropagation(random_state=0).fit(left)
+	# af_right = AffinityPropagation(random_state=0).fit(right)
 	# Pega a média das linhas
-	right_avg = np.average(right, axis=0)
-	left_avg = np.average(left, axis=0)
+	if pavement:
+		right_avg = np.average(right, axis=0)
+		left_avg = np.average(left, axis=0)
+	else:
+		if len(right):
+			right_counts = np.bincount(ms_right.labels_)
+			# right_idxs = np.where(ms_right.labels_ == np.argmax(right_counts))[0]
+			right_idx = np.where(ms_right.labels_ == np.argmax(right_counts))[0][0]
+			# right_avg = np.average([x for x in right if right.index(x) in right_idxs], axis=0)
+			right_avg = right[right_idx]  
+		else: 
+			right_avg = np.nan
+		if len(left):
+			left_counts = np.bincount(ms_left.labels_)
+			# left_idxs = np.where(ms_left.labels_ == np.argmax(left_counts))[0]
+			left_idx = np.where(ms_left.labels_ == np.argmax(left_counts))[0][0]
+			left_avg = left[left_idx]  
+			# left_avg = np.average([x for x in left if left.index(x) in left_idxs], axis=0)
+		else: 
+			left_avg = np.nan
 
 	# Se não houver linhas, usar linhas anteriores
 	# MEMORIA
@@ -108,3 +137,47 @@ def display_lines(image, lines):
 			x1, y1, x2, y2 = line
 			cv2.line(lines_image, (x1, y1), (x2, y2), (0, 0, 255), 10)
 	return lines_image
+
+# Filtro P/B
+# https://stackoverflow.com/questions/55185251/what-is-the-algorithm-behind-photoshops-black-and-white-adjustment-layer
+def black_and_white_adjustment(img, weights):
+    rw, yw, gw, cw, bw, mw = weights 
+
+    h, w = img.shape[:2]
+    min_c = np.min(img, axis=-1).astype(np.float)
+    # max_c = np.max(img, axis=-1).astype(np.float)
+
+    # Can try different definitions as explained in the Ligtness section from
+    # https://en.wikipedia.org/wiki/HSL_and_HSV
+    # like: luminance = (min_c + max_c) / 2 ...
+    luminance = min_c 
+    diff = img - min_c[:, :, None]
+
+    red_mask = (diff[:, :, 0] == 0)
+    green_mask = np.logical_and((diff[:, :, 1] == 0), ~red_mask)
+    blue_mask = ~np.logical_or(red_mask, green_mask)
+
+    c = np.min(diff[:, :, 1:], axis=-1)
+    m = np.min(diff[:, :, [0, 2]], axis=-1)
+    yel = np.min(diff[:, :, :2], axis=-1)
+
+    luminance = luminance + red_mask * (c * cw + (diff[:, :, 1] - c) * gw + (diff[:, :, 2] - c) * bw) \
+                + green_mask * (m * mw + (diff[:, :, 0] - m) * rw + (diff[:, :, 2] - m) * bw)  \
+                + blue_mask * (yel * yw + (diff[:, :, 0] - yel) * rw + (diff[:, :, 1] - yel) * gw)
+
+    return np.clip(luminance, 0, 255).astype(np.uint8)
+
+def reduce_colors(img, n_colors):
+	# arr = img.reshape((-1, 3))
+	# kmeans = KMeans(n_clusters=n_colors, random_state=42).fit(arr)
+	# labels = kmeans.labels_
+	# centers = kmeans.cluster_centers_
+	# less_colors = centers[labels].reshape(img.shape).astype('uint8')
+	# return less_colors
+	img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+	im_pil = Image.fromarray(img)
+	im_pil = im_pil.convert('P', palette=Image.ADAPTIVE, colors=n_colors)
+	im_pil = im_pil.convert('RGB', palette=Image.ADAPTIVE)
+	# For reversing the operation:
+	im_np = np.asarray(im_pil)
+	return cv2.cvtColor(im_np, cv2.COLOR_RGB2BGR)
