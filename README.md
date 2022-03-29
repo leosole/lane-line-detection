@@ -1,5 +1,10 @@
 # lane-line-detection
 Para utilizar esse repositório, modifique o arquivo config.ini com o caminho do vídeo a ser analizado e ajuste os parâmetros
+
+Para rodar:
+```
+python run.py
+```
 ## Parâmetros
 DEBUG: 1 para mostrar o vídeo durante o processo
 
