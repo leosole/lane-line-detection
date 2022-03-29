@@ -16,3 +16,6 @@ THRESHOLD: threshold utilizado
 PAVEMENT: 1 = asfaltado, 0 = estrada de terra
 
 LANE_HEIGHT: altura padrão da linha, caso apenas uma seja encontrada
+
+## Situação atual
+O modo PAVEMENT = 0 ainda está em desenvolvimento
